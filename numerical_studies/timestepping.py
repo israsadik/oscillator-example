@@ -156,11 +156,13 @@ class ERK(TimesteppingMethod):
             self.erk_step = self._erk1
         elif order == 2:
             self.erk_step = self._erk2
+        elif order == 3:
+            self.erk_step = self._erk3    
         elif order == 4:
             self.erk_step = self._erk4
         else:
             raise NotImplementedError(
-                f"Currently only supports order 1,2,4, not {order}!"
+                f"Currently only supports order 1,2,3,4, not {order}!"
             )
 
     def compute_timestep(self, dt: float, t_n: float, last_values: np.ndarray):
@@ -187,7 +189,18 @@ class ERK(TimesteppingMethod):
         c = np.array([0.5, 0.5])
         u_next = self._erk_gen(A, b, c, u_i, dt, t_i)
         return u_next
-
+    
+    def _erk3(self, u_i: np.ndarray, dt: float, t_i=None) -> np.ndarray:
+        """Kutta's 3rd-order explicit Runge-Kutta method"""
+        A = np.zeros((3, 3), dtype=float)
+        A[1, 0] = 0.5
+        A[2, 0] = -1.0
+        A[2, 1] = 2.0
+        b = np.array([0.0, 0.5, 1.0])          # stage times
+        c = np.array([1 / 6, 2 / 3, 1 / 6])    # final weights
+        u_next = self._erk_gen(A, b, c, u_i, dt, t_i)
+        return u_next
+  
     def _erk4(self, u_i: np.ndarray, dt: float, t_i=None) -> np.ndarray:
         """RK4 scheme"""
         A = np.zeros((4, 4), dtype=float)
@@ -281,3 +294,84 @@ class SemiImplicitEuler(TimesteppingMethod):
         v_next = v_n + dt * (np.dot(self.KM, u_n) + self.F(t_n, t_n))
         u_next = u_n + dt * v_next
         return np.concatenate([u_next, v_next])
+
+class TrapezoidalRule(TimesteppingMethod):
+    """
+    Trapezoidal rule for a system y' = Ay + b(t).
+
+    O(dt**2), A-stable.
+    """
+
+    def __init__(
+        self,
+        first_order_matrix: np.ndarray,
+        force_function: callable = None,
+    ):
+        if not force_function:
+            self.force_function = lambda t, t_lower: 0 * t
+        else:
+            self.force_function = force_function
+        self.A = first_order_matrix
+
+    def compute_timestep(self, dt: float, t_n: float, last_values: np.ndarray):
+        f_n = np.asarray(self.force_function(t_n, t_n), dtype=float)
+        f_np1 = np.asarray(self.force_function(t_n + dt, t_n), dtype=float)
+
+        b = 0.5 * dt * (f_n + f_np1)
+        R = np.eye(*self.A.shape) + 0.5 * dt * self.A
+        rhs = np.dot(R, last_values) + b
+
+        L = np.eye(*self.A.shape) - 0.5 * dt * self.A
+        next_values = np.linalg.solve(L, rhs.astype(float))
+        return next_values
+    
+
+class ExactOscillatorSubsystem(TimesteppingMethod):
+    def __init__(self, omega, coupling_coeff, other_u_array, interpolation_order):
+        self.omega = omega
+        self.c = coupling_coeff
+        self.other_u = other_u_array
+        self.interpolation_order = interpolation_order
+
+    def compute_timestep(self, dt: float, t_n: float, last_values: np.ndarray):
+        u_n = last_values[0]
+        v_n = last_values[1]
+
+        w = self.omega
+        c = self.c
+        h = dt
+
+        cos_wh = np.cos(w * h)
+        sin_wh = np.sin(w * h)
+
+        u_hom = cos_wh * u_n + (sin_wh / w) * v_n
+        v_hom = -w * sin_wh * u_n + cos_wh * v_n
+
+        idx = int(round(t_n / h))
+        u_other_n = self.other_u[idx]
+
+        if self.other_u[idx + 1] == np.inf:
+            self.other_u[idx + 1] = u_other_n
+
+        u_other_np1 = self.other_u[idx + 1]
+
+        if self.interpolation_order == "average":
+            ubar = 0.5 * (u_other_n + u_other_np1)
+            I_u = c * ubar * (1 - cos_wh) / w**2
+            I_v = c * ubar * sin_wh / w
+
+        elif self.interpolation_order == 1:
+            du = u_other_np1 - u_other_n
+            I_u = c * (
+                u_other_n * (1 - cos_wh) / w**2
+                + (du / h) * (h / w**2 - sin_wh / w**3)
+            )
+            I_v = c * (
+                u_other_n * sin_wh / w
+                + (du / h) * (1 - cos_wh) / w**2
+            )
+
+        else:
+            raise NotImplementedError("Use interpolation_order=1 or 'average'.")
+
+        return np.array([u_hom + I_u, v_hom + I_v])
