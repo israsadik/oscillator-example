@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from oscillator import MonolithicOscillator
 from timestepping import (ERK, GeneralizedAlpha, ImplicitMidpoint, NewmarkBeta,
-                          SemiImplicitEuler)
+                          SemiImplicitEuler, TrapezoidalRule)
 from utility import comment_meta_information, l2_norm_normalized, max_norm
 
 
@@ -58,6 +58,11 @@ def run_simulation(t_stop: int, N: float, solver_str: str = "newmark"):
             ode_system.A_first_order,
             ode_system.first_order_force,
         )
+    elif solver_str == "trap":
+        solver = TrapezoidalRule(
+            ode_system.A_first_order,
+            ode_system.first_order_force,
+        )
     elif solver_str == "sie":
         solver = SemiImplicitEuler(
             ode_system.A_first_order,
@@ -97,7 +102,7 @@ if __name__ == "__main__":
     elif use_norm == "l2_norm":
         norm = l2_norm_normalized
 
-    method_names = ["newmark", "alpha", "erk4", "sie", "mid"]
+    method_names = ["newmark", "alpha", "erk4", "sie", "mid", "trap"]
     for method_name in method_names:
         print(method_name)
         errors_df["error"] = np.array(
@@ -106,3 +111,4 @@ if __name__ == "__main__":
         filename = f"results/monolithic_{method_name}.csv"
         errors_df.to_csv(filename)
         comment_meta_information(method_name, __file__, filename)
+
