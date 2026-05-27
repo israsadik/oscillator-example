@@ -49,11 +49,11 @@ def analytical_solution(t_end: float, N: int):
     t = np.linspace(0, t_end, N + 1)
     result = np.array(
         [
-            0.5 * (np.cos(2 * np.pi * t) + np.cos(6 * np.pi * t)),
-            0.5 * (np.cos(2 * np.pi * t) - np.cos(6 * np.pi * t)),
-            0.5
+            0.5 * (np.cos(2 * np.pi * t) + np.cos(6 * np.pi * t)), #row1 u1
+            0.5 * (np.cos(2 * np.pi * t) - np.cos(6 * np.pi * t)), #row2 u2
+            0.5 #row3, velocity of u1
             * (-2 * np.pi * np.sin(2 * np.pi * t) - 6 * np.pi * np.sin(6 * np.pi * t)),
-            0.5
+            0.5 #row4, velocity of u2
             * (-2 * np.pi * np.sin(2 * np.pi * t) + 6 * np.pi * np.sin(6 * np.pi * t)),
         ]
     )
@@ -170,6 +170,20 @@ class PartitionedOscillator:
                 previous_other_u, next_other_u, percentage
             )
             return interpolated_u
+        elif self.interpolation_order == "average":
+            # time-averaged interface data: return (u^n + u^{n+1}) / 2
+            # constant for the entire window (no t-dependence)
+            previous_other_u = self.other_u[idx]
+            if self.other_u[idx + 1] == np.inf:
+                self.other_u[idx + 1] = previous_other_u  
+            next_other_u = self.other_u[idx + 1]
+            del t #average doesnt depend on time within the step
+            return 0.5 * (previous_other_u + next_other_u)
+        elif self.interpolation_order == "lagged_average":
+          # use average from previous window: 0.5*(u^{n-1}+u^n)
+            if idx == 0:
+                return self.other_u[0]
+            return 0.5 * (self.other_u[idx - 1] + self.other_u[idx])
         else:
             raise NotImplementedError
 
