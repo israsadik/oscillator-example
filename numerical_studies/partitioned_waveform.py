@@ -28,22 +28,22 @@ if __name__ == "__main__":
         "erk4": cpe.compute_erk4_error,
         "sie": cpe.compute_sie_error,
         "mid": cpe.compute_mid_error,
+        "trap": cpe.compute_trap_error,
+        "erk2": cpe.compute_erk2_error,
     }
     coupling_scheme = "implicit-cps"
     for method_name, method_func in method_name_and_func.items():
-        errors_df["error"] = np.array(
-            [
-                norm(
-                    method_func(
-                        t_stop,
-                        N,
-                        coupling_scheme,
-                        interpolation_order=1,
-                    )
-                )
-                for N in N_list
-            ]
-        )
-        filename = f"results/partitioned_{method_name}_waveform.csv"
+        errors = []
+        for N in N_list:
+            error_matrix, iter_counts = method_func(
+                t_stop,
+                N,
+                coupling_scheme,
+                interpolation_order="average",
+            )
+            errors.append(norm(error_matrix))
+
+        errors_df["error"] = np.array(errors)
+        filename = f"results/partitioned_{method_name}_waveform_avg.csv"
         errors_df.to_csv(filename)
-        comment_meta_information(method_name + "_waveform", __file__, filename)
+        comment_meta_information(method_name + "_waveform_avg", __file__, filename)
