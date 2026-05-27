@@ -124,6 +124,14 @@ def run_implicit_cps_simulation(
     :returns: a tuple containing the result of partition_1 and partition_2 (N values)
     """
 
+    """
+    Implicit CPS with iteration tracking.
+    
+    Returns: (result_1, result_2, iteration_counts)
+        iteration_counts is a list of length N with the number of 
+        fixed-point iterations needed at each time step.
+    """
+
     tol = kwargs.get("tol", 1e-8)
     max_iters = kwargs.get(
         "max_iters", 100
@@ -132,6 +140,7 @@ def run_implicit_cps_simulation(
     dt = t_end / N
     t = 0
     n = 0
+    iteration_counts = []
 
     while n < N:
         k = 0
@@ -152,12 +161,13 @@ def run_implicit_cps_simulation(
             partition_1.other_u[n + 1] = temp_2[0]
             partition_2.other_u[n + 1] = temp_1[0]
             k += 1
+        iteration_counts.append(k)
         n += 1
         t += dt
         if k == max_iters:
             print("WARNING!")
             print(f"dt = {dt}")
-    return partition_1.result, partition_2.result
+    return partition_1.result, partition_2.result, iteration_counts
 
 
 def run_strang_simulation(
