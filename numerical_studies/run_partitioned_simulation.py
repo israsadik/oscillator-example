@@ -40,6 +40,15 @@ def return_system_partitions(
     return left_system, right_system
 
 
+def _unpack_result(sim_result, coupling_scheme_str):
+    """Unpack simulation result, handling optional iteration_counts from implicit-cps."""
+    if coupling_scheme_str == "implicit-cps":
+        left_result, right_result, iteration_counts = sim_result
+    else:
+        left_result, right_result = sim_result
+        iteration_counts = None
+    return left_result, right_result, iteration_counts
+
 def partitioned_newmark_beta(
     t_end: float,
     N: int,
@@ -71,13 +80,14 @@ def partitioned_newmark_beta(
         right_system.second_order_force,
     )
     # run simulation
-    left_result, right_result = run_simulation(
+    result = run_simulation(
         left_system, solver_left, right_system, solver_right, t_end, N, **kwargs
     )
+    left_result, right_result, iteration_counts = _unpack_result(result, coupling_scheme_str)
     full_result = np.array(
         [left_result[0], right_result[0], left_result[1], right_result[1]]
     )
-    return full_result
+    return full_result, iteration_counts
 
 
 def partitioned_generalized_alpha(
@@ -116,14 +126,16 @@ def partitioned_generalized_alpha(
         alpha_m,
         right_system.second_order_force,
     )
-    # run simulation
-    left_result, right_result = run_simulation(
+    result = run_simulation(
         left_system, solver_left, right_system, solver_right, t_end, N, **kwargs
     )
+
+    # run simulation
+    left_result, right_result, iteration_counts = _unpack_result(result, coupling_scheme_str)
     full_result = np.array(
         [left_result[0], right_result[0], left_result[1], right_result[1]]
     )
-    return full_result
+    return full_result, iteration_counts
 
 
 def partitioned_erk(
@@ -145,14 +157,14 @@ def partitioned_erk(
     solver_right = ts.ERK(
         right_system.A_first_order, right_system.first_order_force, order
     )
-    left_result, right_result = run_simulation(
+    result = run_simulation(
         left_system, solver_left, right_system, solver_right, t_end, N, **kwargs
     )
+    left_result, right_result, iteration_counts = _unpack_result(result, coupling_scheme_str)
     full_result = np.array(
         [left_result[0], right_result[0], left_result[1], right_result[1]]
     )
-    return full_result
-
+    return full_result, iteration_counts
 
 def partitioned_semi_implicit_euler(
     t_end: float,
@@ -172,13 +184,14 @@ def partitioned_semi_implicit_euler(
     solver_right = ts.SemiImplicitEuler(
         right_system.A_first_order, right_system.second_order_force
     )
-    left_result, right_result = run_simulation(
+    result = run_simulation(
         left_system, solver_left, right_system, solver_right, t_end, N, **kwargs
     )
+    left_result, right_result, iteration_counts = _unpack_result(result, coupling_scheme_str)
     full_result = np.array(
         [left_result[0], right_result[0], left_result[1], right_result[1]]
     )
-    return full_result
+    return full_result, iteration_counts
 
 
 def partitioned_implicit_midpoint(
@@ -199,10 +212,80 @@ def partitioned_implicit_midpoint(
     solver_right = ts.ImplicitMidpoint(
         right_system.A_first_order, right_system.first_order_force
     )
-    left_result, right_result = run_simulation(
+    result = run_simulation(
         left_system, solver_left, right_system, solver_right, t_end, N, **kwargs
     )
+    left_result, right_result, iteration_counts = _unpack_result(result, coupling_scheme_str)
     full_result = np.array(
         [left_result[0], right_result[0], left_result[1], right_result[1]]
     )
-    return full_result
+    return full_result, iteration_counts
+
+def partitioned_trapezoidal(
+    t_end: float,
+    N: int,
+    coupling_scheme_str: str = "",
+    **kwargs,
+):
+    run_simulation = return_simulation_runner(coupling_scheme_str)
+    left_system, right_system = return_system_partitions(
+        t_end, N, 2, coupling_scheme_str, **kwargs
+    )
+
+    # create solvers
+    solver_left = ts.TrapezoidalRule(
+        left_system.A_first_order, left_system.first_order_force
+    )
+    solver_right = ts.TrapezoidalRule(
+        right_system.A_first_order, right_system.first_order_force
+    )
+    result = run_simulation(
+        left_system, solver_left, right_system, solver_right, t_end, N, **kwargs
+    )
+    left_result, right_result, iteration_counts = _unpack_result(result, coupling_scheme_str)
+    full_result = np.array(
+        [left_result[0], right_result[0], left_result[1], right_result[1]]
+    )
+    return full_result, iteration_counts
+
+
+
+def partitioned_exact(
+    t_end: float,
+    N: int,
+    coupling_scheme_str: str = "",
+    **kwargs,
+):
+    run_simulation = return_simulation_runner(coupling_scheme_str)
+
+    left_system, right_system = return_system_partitions(
+        t_end, N, 2, coupling_scheme_str, **kwargs
+    )
+
+    omega_left = np.sqrt((left_system.K[0, 0]) / left_system.M[0, 0])
+    omega_right = np.sqrt((right_system.K[0, 0]) / right_system.M[0, 0])
+
+    c_left = left_system.k12 / left_system.M[0, 0]
+    c_right = right_system.k12 / right_system.M[0, 0]
+
+    interpolation_order = kwargs.get("interpolation_order", 1)
+
+    solver_left = ts.ExactOscillatorSubsystem(
+        omega_left, c_left, left_system.other_u, interpolation_order
+    )
+
+    solver_right = ts.ExactOscillatorSubsystem(
+        omega_right, c_right, right_system.other_u, interpolation_order
+    )
+
+    result = run_simulation(
+        left_system, solver_left, right_system, solver_right, t_end, N, **kwargs
+    )
+
+    left_result, right_result, iteration_counts = _unpack_result(result, coupling_scheme_str)
+
+    full_result = np.array(
+        [left_result[0], right_result[0], left_result[1], right_result[1]]
+    )
+
+    return full_result, iteration_counts
